@@ -1,21 +1,25 @@
-# llm-evaluation-observability
+# LLM Evaluation & Observability
 
-LLM evaluation baselines: exact match, token F1, latency and JSONL event logs.
+Reproducible evaluation baselines for generated answers and document retrieval.
 
-## Status
+## What works
 
-Early-stage educational prototype. Not production-ready. No proprietary course materials, credentials or private datasets are included.
+- Authenticated FastAPI `POST /v1/evaluate` computes exact match, token F1, p95 latency, and configurable pass/fail release gates.
+- Authenticated `POST /v1/evaluate/retrieval` computes Recall@K, MRR@K and Precision@K from labeled relevant/retrieved IDs.
+- Standalone deterministic reports with stable SHA-256 input dataset identifiers.
+- JSONL event support in the core library, Dockerfile, unit tests, GitHub Actions.
 
-## Current implementation
+## Run
 
-The Python domain logic is available under `src/`. This first commit establishes a minimal testable baseline; packaging, API integration, automated tests, Docker, CI and operational hardening are being added incrementally.
+```bash
+pip install -e '.[dev]'
+export EVAL_API_KEY=replace-with-local-secret
+uvicorn llm_eval.api:create_app --factory --port 8000
+pytest -q
+```
 
-## Security
+See [Evaluation protocol](docs/EVALUATION_PROTOCOL.md). The sibling inference platform can call this API when an RAG job includes a reference answer.
 
-Do not deploy the demonstration components as a multi-tenant public service. Authentication, durable persistence, rate limiting and observability require additional work.
+## Boundaries
 
-## Roadmap
-
-- Complete package metadata and automated tests
-- Add an executable example and continuous integration
-- Implement production-oriented providers, tracing and deployment guidance
+These are transparent lexical and ranking metrics, **not** a validated hallucination/factuality judge. Precision and recall require a curated relevance dataset. p95 from tiny batches is not statistically stable. Model tracing, cost monitoring and online observability dashboards are future work. Not production-ready.
