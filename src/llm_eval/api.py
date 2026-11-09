@@ -26,6 +26,9 @@ class RetrievalCase(BaseModel):
 class RetrievalRequest(BaseModel):
     cases: list[RetrievalCase] = Field(min_length=1, max_length=1000)
     k: int = Field(default=5, ge=1, le=100)
+    min_recall_at_k: float | None = Field(default=None, ge=0, le=1)
+    min_mrr_at_k: float | None = Field(default=None, ge=0, le=1)
+    min_precision_at_k: float | None = Field(default=None, ge=0, le=1)
 
 def create_app(api_key: str | None = None) -> FastAPI:
     secret = api_key if api_key is not None else os.getenv("EVAL_API_KEY", "")
@@ -51,7 +54,15 @@ def create_app(api_key: str | None = None) -> FastAPI:
     @app.post("/v1/evaluate/retrieval")
     def evaluate_ranked_retrieval(body: RetrievalRequest, _: None = Depends(authorize)):
         try:
-            return evaluate_retrieval([case.model_dump() for case in body.cases], k=body.k)
+            metrics = evaluate_retrieval([case.model_dump() for case in body.cases], k=body.k)
+            thresholds = {
+                "recall_at_k": body.min_recall_at_k,
+                "mrr_at_k": body.min_mrr_at_k,
+                "precision_at_k": body.min_precision_at_k,
+            }
+            failures = [f"{name} below {minimum}" for name, minimum in thresholds.items()
+                        if minimum is not None and metrics[name] < minimum]
+            return {**metrics, "passed": not failures, "failures": failures}
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
     return app
