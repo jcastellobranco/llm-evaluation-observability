@@ -37,7 +37,8 @@ make ps-observability
 
 - Grafana: http://127.0.0.1:3000 (username `admin` unless `GRAFANA_ADMIN_USER` is set)
 - Prometheus: http://127.0.0.1:9090/targets
-- Dashboard: **ATLAS / ATLAS · Local observability** (automatically provisioned)
+- Loki: private Docker network only; no host port
+- Dashboards: **ATLAS · Local observability**, **ATLAS · RAG & Worker**, **ATLAS · Container logs** (automatically provisioned)
 - To view the generated Grafana password locally, inspect
   `GRAFANA_ADMIN_PASSWORD` in the inference repository's untracked `.env`.
 - Grafana/Prometheus are bound to localhost, not publicly exposed.
@@ -46,16 +47,45 @@ make ps-observability
 - Prometheus keeps seven days of data in a persistent Docker volume. Neither
   `make down-observability` nor normal restarts delete volumes.
 
-The dashboard includes API throughput/latency, evaluation batch outcomes and
-agent telemetry *when events arrive*. Evaluation service metrics include only
+The dashboards include API throughput/latency, evaluation batch outcomes,
+RAG search/embedding/ingest timings, worker queue/outcomes, per-service Docker
+logs, and agent telemetry *when events arrive*. Evaluation service metrics include only
 bounded kind/outcome/status labels; no prompts, run IDs, tenant hashes, or
 secrets. Agent telemetry delivery from the agent service is currently optional
 and disabled in the default HTTP-only local setup, so its chart can be empty.
-RAG and worker-specific Prometheus instrumentation are not yet included.
+RAG and worker-specific Prometheus instrumentation are included in their
+respective sibling repositories; update those checkouts before rebuilding.
 
 Grafana's admin password is applied when its database volume is first created;
 changing `.env` alone does not reset an existing Grafana account. This is a
 local development dashboard, not a production monitoring deployment.
+
+### Container logs and service metrics
+
+Loki stores container logs for seven days on a local Docker volume. Grafana
+Alloy discovers ATLAS Compose services through a restricted Docker API proxy;
+the Docker socket is **not** mounted in Alloy, and the proxy accepts GET
+requests only on an isolated Docker network. This reduces, but does not remove,
+the risk of granting access to Docker logs. Do not run untrusted images on the
+same Docker daemon. The collector filters known Compose service names; it is
+not a strong cross-project isolation boundary.
+
+In Grafana open **Explore → ATLAS Loki**, then query:
+
+```logql
+{platform="atlas",service="worker"}
+```
+
+Or open **ATLAS · Container logs** and choose `worker`, `rag`, `backend`,
+`evaluation`, `agent`, or another service from the dropdown. For worker
+queue and RAG timings use **ATLAS · RAG & Worker**. Prometheus has four
+targets: `atlas-api`, `atlas-evaluation`, `atlas-rag`, `atlas-worker`.
+
+Logs are potentially sensitive even when metric labels are safe. Do not log
+request bodies, documents, credentials, raw SQL parameters, or prompt text.
+Avoid enabling debug/access logging with raw request URLs. No automatic log
+redaction is guaranteed. Loki is unauthenticated and accessible only inside
+the private Compose network. Grafana's login remains required.
 
 ## Boundaries
 
