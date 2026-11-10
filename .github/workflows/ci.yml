@@ -25,6 +25,7 @@ jobs:
             -e GF_SECURITY_ADMIN_PASSWORD=ci-local-test-only \
             -e GF_ANALYTICS_REPORTING_ENABLED=false \
             -v "$PWD/observability/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro" \
+            -v "$PWD/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro" \
             -v "$PWD/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro" \
             grafana/grafana:11.6.0
           for i in $(seq 1 45); do
