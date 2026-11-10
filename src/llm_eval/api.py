@@ -6,6 +6,23 @@ from pydantic import BaseModel, Field
 from .core import token_f1
 from .retrieval import evaluate_retrieval
 from .advanced import Gate, summarize, check_gate
+from .agent_telemetry import record as record_agent_event, aggregate as aggregate_agent_events
+
+class AgentEvent(BaseModel):
+    run_id: str = Field(min_length=1, max_length=128)
+    tenant_hash: str = Field(min_length=8, max_length=128)
+    workflow: str = Field(min_length=1, max_length=64)
+    status: str = Field(pattern="^(completed|failed|insufficient_evidence|blocked)$")
+    duration_ms: float = Field(ge=0, le=3600000)
+    llm_calls: int = Field(default=0, ge=0, le=100)
+    tool_calls: int = Field(default=0, ge=0, le=100)
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    cache_hit: bool = False
+    guardrail_blocked: bool = False
+    estimated_cost_usd: float = Field(default=0, ge=0)
+
+    model_config = {"extra": "forbid"}
 
 class Case(BaseModel):
     id: str = Field(min_length=1, max_length=128)
@@ -50,6 +67,15 @@ def create_app(api_key: str | None = None) -> FastAPI:
     @app.get("/health")
     def health():
         return {"status":"ok"}
+    @app.post("/v1/telemetry/agent", status_code=202)
+    def ingest_agent_event(body: AgentEvent, _: None = Depends(authorize)):
+        record_agent_event(body.model_dump())
+        return {"accepted": True}
+
+    @app.get("/v1/telemetry/agent/summary")
+    def agent_summary(_: None = Depends(authorize)):
+        return aggregate_agent_events()
+
     @app.post("/v1/evaluate")
     def evaluate(body: EvaluateRequest, _: None = Depends(authorize)):
         events = [{
