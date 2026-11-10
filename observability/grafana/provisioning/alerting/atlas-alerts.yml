@@ -1,0 +1,242 @@
+# Local Grafana-managed alert rules. Evaluated by Grafana 11.6; no Alertmanager needed.
+# Rules are visible in Alerting > Alert rules. External notifications require a contact point.
+# Folder 'general' is the built-in Grafana folder; the ATLAS label keeps rules discoverable.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: atlas-local-service-health
+    folder: general
+    interval: 1m
+    rules:
+      - uid: atlas-worker-queue-backlog
+        title: "ATLAS · Worker queue backlog"
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        annotations:
+          summary: "More than 10 queued jobs for 5 minutes"
+          description: "The worker queue is backing up. Check worker logs, active jobs and worker availability."
+          runbook_url: "https://github.com/jcastellobranco/llm-evaluation-observability/blob/main/docs/ATLAS_ALERTS.md"
+        labels:
+          platform: atlas
+          severity: warning
+          component: worker
+        data:
+          - refId: A
+            datasourceUid: atlas-prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: atlas-prometheus
+              editorMode: code
+              expr: "sum(atlas_worker_queue_jobs{status=\"queued\"}) or vector(0)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              type: threshold
+              conditions:
+                - evaluator:
+                    params: [10]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+      - uid: atlas-worker-failure-rate
+        title: "ATLAS · Worker failure rate"
+        condition: B
+        for: 3m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        annotations:
+          summary: "Over 20% terminal job failures (at least 5 finished jobs in 10 minutes)"
+          description: "Investigate worker exception types, job dependencies, and permanent/exhausted failures. Retries are excluded from this ratio."
+          runbook_url: "https://github.com/jcastellobranco/llm-evaluation-observability/blob/main/docs/ATLAS_ALERTS.md"
+        labels:
+          platform: atlas
+          severity: critical
+          component: worker
+        data:
+          - refId: A
+            datasourceUid: atlas-prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: atlas-prometheus
+              editorMode: code
+              expr: "((sum(increase(atlas_worker_jobs_total{outcome=\"failed\"}[10m])) or vector(0)) / clamp_min((sum(increase(atlas_worker_jobs_total{outcome=~\"failed|completed\"}[10m])) or vector(0)), 1)) and on() ((sum(increase(atlas_worker_jobs_total{outcome=~\"failed|completed\"}[10m])) or vector(0)) >= 5)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              type: threshold
+              conditions:
+                - evaluator:
+                    params: [0.2]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+      - uid: atlas-rag-search-p95
+        title: "ATLAS · RAG search p95"
+        condition: B
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        annotations:
+          summary: "RAG search p95 exceeds 2 seconds (at least 10 searches in 5 minutes)"
+          description: "Inspect vector database load, embedding/search performance, query execution, and RAG logs."
+          runbook_url: "https://github.com/jcastellobranco/llm-evaluation-observability/blob/main/docs/ATLAS_ALERTS.md"
+        labels:
+          platform: atlas
+          severity: warning
+          component: rag
+        data:
+          - refId: A
+            datasourceUid: atlas-prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: atlas-prometheus
+              editorMode: code
+              expr: "histogram_quantile(0.95, sum by (le) (rate(atlas_rag_search_duration_seconds_bucket[5m]))) and on() ((sum(increase(atlas_rag_search_duration_seconds_count[5m])) or vector(0)) >= 10)"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              type: threshold
+              conditions:
+                - evaluator:
+                    params: [2]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
+      - uid: atlas-target-down
+        title: "ATLAS · RAG / Worker target unavailable"
+        condition: B
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        isPaused: false
+        annotations:
+          summary: "RAG or worker Prometheus target has been down for 2 minutes"
+          description: "Check the Prometheus Targets page and the corresponding service logs. One alert instance is created per affected target."
+          runbook_url: "https://github.com/jcastellobranco/llm-evaluation-observability/blob/main/docs/ATLAS_ALERTS.md"
+        labels:
+          platform: atlas
+          severity: critical
+          component: observability
+        data:
+          - refId: A
+            datasourceUid: atlas-prometheus
+            relativeTimeRange:
+              from: 600
+              to: 0
+            model:
+              datasource:
+                type: prometheus
+                uid: atlas-prometheus
+              editorMode: code
+              expr: "1 - up{job=~\"atlas-rag|atlas-worker\"}"
+              instant: true
+              range: false
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            relativeTimeRange:
+              from: 0
+              to: 0
+            model:
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              type: threshold
+              conditions:
+                - evaluator:
+                    params: [0.5]
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params: [B]
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: B
