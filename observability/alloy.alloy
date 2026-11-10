@@ -1,0 +1,42 @@
+// Local Docker log collector. Docker API is accessed through a GET-only proxy,
+// not through a Docker socket mounted in the Alloy container.
+discovery.docker "atlas" {
+  host = "tcp://docker-proxy:2375"
+  refresh_interval = "10s"
+}
+
+discovery.relabel "atlas" {
+  targets = discovery.docker.atlas.targets
+
+  // Only collect known ATLAS Compose services, not unrelated host containers.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    regex = "(backend|worker|rag|evaluation|agent|frontend|db|rag-db|redis|prometheus|grafana|loki|migrate|rag-migrate)"
+    action = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label = "service"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex = "/(.*)"
+    target_label = "container"
+  }
+}
+
+loki.source.docker "atlas" {
+  host = "tcp://docker-proxy:2375"
+  targets = discovery.relabel.atlas.output
+  labels = { environment = "local", platform = "atlas" }
+  refresh_interval = "10s"
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
