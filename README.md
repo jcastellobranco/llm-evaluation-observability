@@ -20,7 +20,7 @@ pytest -q
 
 See [Evaluation protocol](docs/EVALUATION_PROTOCOL.md). The sibling inference platform can call this API when an RAG job includes a reference answer.
 
-## ATLAS local observability (Grafana + Prometheus)
+## ATLAS local observability (Grafana + Prometheus + alerts)
 
 This repository **owns** the Prometheus scrape configuration, Grafana datasource
 provisioning, and ATLAS overview dashboard under `observability/`. The sibling
@@ -39,6 +39,7 @@ make ps-observability
 - Prometheus: http://127.0.0.1:9090/targets
 - Loki: private Docker network only; no host port
 - Dashboards: **ATLAS · Local observability**, **ATLAS · RAG & Worker**, **ATLAS · Container logs** (automatically provisioned)
+- Grafana-managed alerts: worker queue backlog, terminal failure rate, RAG search p95 and RAG/worker availability. See [alert thresholds and notifications](docs/ATLAS_ALERTS.md).
 - To view the generated Grafana password locally, inspect
   `GRAFANA_ADMIN_PASSWORD` in the inference repository's untracked `.env`.
 - Grafana/Prometheus are bound to localhost, not publicly exposed.
