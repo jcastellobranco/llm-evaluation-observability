@@ -19,7 +19,7 @@ def rules_by_uid():
     assert len(doc["groups"]) == 1
     group = doc["groups"][0]
     assert group["orgId"] == 1
-    assert group["folder"] == "general"
+    assert group["folder"] == "ATLAS"
     assert group["interval"] == "1m"
     return {rule["uid"]: rule for rule in group["rules"]}
 
