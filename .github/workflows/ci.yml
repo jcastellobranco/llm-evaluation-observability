@@ -12,3 +12,51 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install -e '.[dev]'
       - run: python -m pytest -q
+
+  grafana-provisioning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot Grafana 11.6 with provisioned ATLAS alerts
+        run: |
+          docker run -d --name atlas-grafana-alerts-test \
+            -p 127.0.0.1:3301:3000 \
+            -e GF_SECURITY_ADMIN_PASSWORD=ci-local-test-only \
+            -e GF_ANALYTICS_REPORTING_ENABLED=false \
+            -v "$PWD/observability/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro" \
+            -v "$PWD/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro" \
+            grafana/grafana:11.6.0
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 3 -u admin:ci-local-test-only \
+              http://127.0.0.1:3301/api/v1/provisioning/alert-rules \
+              -o /tmp/atlas-alerts.json; then
+              break
+            fi
+            sleep 2
+          done
+          if ! test -s /tmp/atlas-alerts.json; then
+            docker logs --tail=120 atlas-grafana-alerts-test
+            exit 1
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path("/tmp/atlas-alerts.json").read_text())
+          expected = {
+              "atlas-worker-queue-backlog",
+              "atlas-worker-failure-rate",
+              "atlas-rag-search-p95",
+              "atlas-target-down",
+          }
+          actual = {rule["uid"] for rule in data}
+          assert expected <= actual, (expected, actual)
+          assert all(not rule.get("isPaused", False) for rule in data if rule["uid"] in expected)
+          print("Grafana provisioned all four active ATLAS alert rules")
+          PY
+      - name: Grafana logs on failure
+        if: failure()
+        run: docker logs --tail=160 atlas-grafana-alerts-test || true
+      - name: Stop test container
+        if: always()
+        run: docker rm -f atlas-grafana-alerts-test || true
