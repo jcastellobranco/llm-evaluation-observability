@@ -28,6 +28,15 @@ class CitationCase(BaseModel):
 class CitationRequest(BaseModel):
     cases: list[CitationCase] = Field(min_length=1, max_length=1000)
 
+class GroundednessCase(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    answer: str = Field(min_length=1, max_length=16000)
+    evidence: list[str] = Field(min_length=1, max_length=20)
+    min_token_support: float = Field(default=0.75, ge=0, le=1)
+
+class GroundednessRequest(BaseModel):
+    cases: list[GroundednessCase] = Field(min_length=1, max_length=1000)
+
 class RetrievalCase(BaseModel):
     retrieved_ids: list[str] = Field(max_length=100)
     relevant_ids: list[str] = Field(min_length=1, max_length=100)
@@ -73,6 +82,22 @@ def create_app(api_key: str | None = None) -> FastAPI:
             results.append({"id": case.id, "passed": not unsupported and not missing,
                             "unsupported_ids": unsupported, "missing_ids": missing})
         return {"passed": all(item["passed"] for item in results), "cases": results}
+
+    @app.post("/v1/evaluate/groundedness")
+    def evaluate_groundedness(body: GroundednessRequest, _: None = Depends(authorize)):
+        """Deterministic lexical evidence support, NOT semantic entailment."""
+        import re
+        results = []
+        for case in body.cases:
+            answer_tokens = set(re.findall(r"\\b\\w+\\b", case.answer.casefold()))
+            evidence_tokens = set(re.findall(r"\\b\\w+\\b", " ".join(case.evidence).casefold()))
+            supported = answer_tokens & evidence_tokens
+            score = len(supported) / len(answer_tokens) if answer_tokens else 0.0
+            results.append({"id": case.id, "token_support": round(score, 4),
+                            "unsupported_tokens": sorted(answer_tokens - evidence_tokens),
+                            "passed": score >= case.min_token_support})
+        return {"passed": all(row["passed"] for row in results),
+                "metric": "lexical_token_support", "cases": results}
 
     @app.post("/v1/evaluate/retrieval")
     def evaluate_ranked_retrieval(body: RetrievalRequest, _: None = Depends(authorize)):
