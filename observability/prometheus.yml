@@ -1,0 +1,15 @@
+# Scrape only services in the private ATLAS Docker Compose network.
+# No bearer tokens, tenant IDs or prompts are exported as labels.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: atlas-api
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["backend:8000"]
+  - job_name: atlas-evaluation
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["evaluation:8000"]
