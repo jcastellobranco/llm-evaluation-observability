@@ -1,8 +1,8 @@
 # ATLAS local alerting (Grafana 11.6)
 
 The local Grafana instance evaluates four provisioned **Grafana-managed** rules
-every minute. They are visible in **Alerting → Alert rules** under the built-in
-General folder with the `platform=atlas` label. No cloud account or
+every minute. They are visible in **Alerting → Alert rules** under the
+**ATLAS** folder with the `platform=atlas` label. No cloud account or
 Alertmanager container is required.
 
 | Rule | Trigger | Pending period | Severity |
