@@ -1,11 +1,11 @@
 # Local Grafana-managed alert rules. Evaluated by Grafana 11.6; no Alertmanager needed.
 # Rules are visible in Alerting > Alert rules. External notifications require a contact point.
-# Folder 'general' is the built-in Grafana folder; the ATLAS label keeps rules discoverable.
+# Grafana provisions the dedicated ATLAS folder (also used by dashboards).
 apiVersion: 1
 groups:
   - orgId: 1
     name: atlas-local-service-health
-    folder: general
+    folder: ATLAS
     interval: 1m
     rules:
       - uid: atlas-worker-queue-backlog
