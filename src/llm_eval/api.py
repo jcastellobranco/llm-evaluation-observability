@@ -1,12 +1,14 @@
 """Evaluation service with authenticated requests and deterministic baseline metrics."""
 import hmac
 import os
+import time
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 from .core import token_f1
 from .retrieval import evaluate_retrieval
 from .advanced import Gate, summarize, check_gate
 from .agent_telemetry import record as record_agent_event, aggregate as aggregate_agent_events
+from .prometheus_metrics import metrics_app, record_evaluation, record_agent
 
 class AgentEvent(BaseModel):
     run_id: str = Field(min_length=1, max_length=128)
@@ -61,6 +63,7 @@ def create_app(api_key: str | None = None) -> FastAPI:
     if not secret:
         raise RuntimeError("EVAL_API_KEY is required")
     app = FastAPI(title="LLM Evaluation Platform", version="0.3.0")
+    app.mount("/metrics", metrics_app)
     def authorize(x_api_key: str | None = Header(default=None)):
         if not x_api_key or not hmac.compare_digest(x_api_key, secret):
             raise HTTPException(401, "Invalid API key")
@@ -70,6 +73,7 @@ def create_app(api_key: str | None = None) -> FastAPI:
     @app.post("/v1/telemetry/agent", status_code=202)
     def ingest_agent_event(body: AgentEvent, _: None = Depends(authorize)):
         record_agent_event(body.model_dump())
+        record_agent(body.status, cache_hit=body.cache_hit, guardrail_blocked=body.guardrail_blocked)
         return {"accepted": True}
 
     @app.get("/v1/telemetry/agent/summary")
@@ -78,6 +82,7 @@ def create_app(api_key: str | None = None) -> FastAPI:
 
     @app.post("/v1/evaluate")
     def evaluate(body: EvaluateRequest, _: None = Depends(authorize)):
+        started = time.perf_counter()
         events = [{
             "exact_match": case.prediction.strip().casefold() == case.reference.strip().casefold(),
             "token_f1": token_f1(case.prediction, case.reference),
@@ -85,10 +90,12 @@ def create_app(api_key: str | None = None) -> FastAPI:
         } for case in body.cases]
         metrics = summarize(events)
         passed, failures = check_gate(metrics, Gate(body.min_exact_match, body.min_token_f1, body.max_p95_latency_ms))
+        record_evaluation("answer", passed, len(body.cases), time.perf_counter() - started)
         return {"passed": passed, "failures": failures, "metrics": metrics, "cases": [{"id": c.id, **event} for c,event in zip(body.cases,events)]}
     @app.post("/v1/evaluate/citations")
     def evaluate_citations(body: CitationRequest, _: None = Depends(authorize)):
         """Deterministic citation allowlist/coverage gate; not a factuality judge."""
+        started = time.perf_counter()
         results = []
         for case in body.cases:
             cited = set(case.cited_ids)
@@ -98,10 +105,13 @@ def create_app(api_key: str | None = None) -> FastAPI:
             missing = sorted(required - cited)
             results.append({"id": case.id, "passed": not unsupported and not missing,
                             "unsupported_ids": unsupported, "missing_ids": missing})
-        return {"passed": all(item["passed"] for item in results), "cases": results}
+        passed = all(item["passed"] for item in results)
+        record_evaluation("citations", passed, len(body.cases), time.perf_counter() - started)
+        return {"passed": passed, "cases": results}
 
     @app.post("/v1/evaluate/retrieval")
     def evaluate_ranked_retrieval(body: RetrievalRequest, _: None = Depends(authorize)):
+        started = time.perf_counter()
         try:
             metrics = evaluate_retrieval([case.model_dump() for case in body.cases], k=body.k)
             thresholds = {
@@ -111,6 +121,7 @@ def create_app(api_key: str | None = None) -> FastAPI:
             }
             failures = [f"{name} below {minimum}" for name, minimum in thresholds.items()
                         if minimum is not None and metrics[name] < minimum]
+            record_evaluation("retrieval", not failures, len(body.cases), time.perf_counter() - started)
             return {**metrics, "passed": not failures, "failures": failures}
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
