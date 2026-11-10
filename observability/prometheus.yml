@@ -13,3 +13,11 @@ scrape_configs:
     metrics_path: /metrics/
     static_configs:
       - targets: ["evaluation:8000"]
+  - job_name: atlas-rag
+    metrics_path: /metrics/
+    static_configs:
+      - targets: ["rag:8000"]
+  - job_name: atlas-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:9101"]
